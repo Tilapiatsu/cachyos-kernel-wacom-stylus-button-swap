@@ -1,10 +1,12 @@
+KERNELRELEASE ?= $(shell uname -r)
+
 obj-m += wacom.o
 
 wacom-objs := \
 	src/wacom_wac.o \
 	src/wacom_sys.o
 
-KDIR := /lib/modules/$(shell uname -r)/build
+KDIR := /lib/modules/$(KERNELRELEASE)/build
 PWD := $(shell pwd)
 
 all:
