@@ -364,6 +364,11 @@ struct wacom_wac {
 	bool has_mode_change;
 	bool is_direct_mode;
 	bool is_invalid_bt_frame;
+  struct {
+    bool stylus_latch;
+    bool stylus2_latch;
+  } pen_state;
+
 };
 
 #endif

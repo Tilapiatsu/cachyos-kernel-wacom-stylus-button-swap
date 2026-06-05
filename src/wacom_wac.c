@@ -1208,10 +1208,20 @@ static int wacom_intuos_bt_irq(struct wacom_wac *wacom, size_t len)
 
 	switch (data[0]) {
 	case 0x04:
+		if (len < 32) {
+			dev_warn(wacom->pen_input->dev.parent,
+				 "Report 0x04 too short: %zu bytes\n", len);
+			break;
+		}
 		wacom_intuos_bt_process_data(wacom, data + i);
 		i += 10;
 		fallthrough;
 	case 0x03:
+		if (i == 1 && len < 22) {
+			dev_warn(wacom->pen_input->dev.parent,
+				 "Report 0x03 too short: %zu bytes\n", len);
+			break;
+		}
 		wacom_intuos_bt_process_data(wacom, data + i);
 		i += 10;
 		wacom_intuos_bt_process_data(wacom, data + i);
@@ -2351,10 +2361,11 @@ static void wacom_wac_pen_usage_mapping(struct hid_device *hdev,
 		wacom_map_usage(input, usage, field, EV_KEY, BTN_TOUCH, 0);
 		break;
 	case HID_DG_TIPSWITCH:
-		input_set_capability(input, EV_KEY, BTN_TOOL_PEN);
-		wacom_map_usage(input, usage, field, EV_KEY, BTN_TOUCH, 0);
+    input_set_capability(input, EV_KEY, BTN_TOOL_PEN);
+    wacom_map_usage(input, usage, field, EV_KEY, BTN_TOUCH, 0);
 		break;
 	case HID_DG_BARRELSWITCH:
+
 		wacom_wac->hid_data.barrelswitch = true;
 		wacom_set_barrel_switch3_usage(wacom_wac);
 		wacom_map_usage(input, usage, field, EV_KEY, BTN_STYLUS, 0);
@@ -2562,7 +2573,9 @@ static void wacom_wac_pen_report(struct hid_device *hdev,
 	bool range = wacom_wac->hid_data.inrange_state;
 	bool sense = wacom_wac->hid_data.sense_state;
 	bool entering_range = !wacom_wac->tool[0] && range;
-  // bool side = ( wacom_wac->hid_data.barrelswitch || wacom_wac->hid_data.barrelswitch2);
+	bool tip = wacom_wac->hid_data.tipswitch;
+	bool b1  = wacom_wac->hid_data.barrelswitch;
+	bool b2  = wacom_wac->hid_data.barrelswitch2;
 
 	if (wacom_wac->is_invalid_bt_frame)
 		return;
@@ -2591,50 +2604,59 @@ static void wacom_wac_pen_report(struct hid_device *hdev,
 			wacom_wac->hid_data.barrelswitch2 = sw_state == 2;
 			wacom_wac->hid_data.barrelswitch3 = sw_state == 3;
 		}
-    
 
-    // if (wacom_wac->hid_data.tipswitch) {
-    //   input_report_key(input, BTN_STYLUS, wacom_wac->hid_data.barrelswitch2);
-    //   input_report_key(input, BTN_STYLUS2, wacom_wac->hid_data.barrelswitch);
-    //   // wacom_wac->hid_data.tipswitch = false;
-    // } else {
-    //   input_report_key(input, BTN_STYLUS, 0);
-    //   input_report_key(input, BTN_STYLUS2, 0);
-    // }
-    input_report_key(input, BTN_STYLUS, wacom_wac->hid_data.barrelswitch2);
-    input_report_key(input, BTN_STYLUS2, wacom_wac->hid_data.barrelswitch);
-		input_report_key(input, BTN_STYLUS3, wacom_wac->hid_data.barrelswitch3);
+  if (b1 && tip)
+      wacom_wac->pen_state.stylus_latch = true;
 
-		/*
-		 * Non-USI EMR tools should have their IDs mangled to
-		 * match the legacy behavior of wacom_intuos_general
-		 */
-		if (wacom_wac->serial[0] >> 52 == 1)
-			id = wacom_intuos_id_mangle(id);
+  if (b2 && tip)
+      wacom_wac->pen_state.stylus2_latch = true;
 
-		/*
-		 * To ensure compatibility with xf86-input-wacom, we should
-		 * report the BTN_TOOL_* event prior to the ABS_MISC or
-		 * MSC_SERIAL events.
-		 */
-    input_report_key(input, BTN_TOUCH, wacom_wac->hid_data.tipswitch);
-		input_report_key(input, wacom_wac->tool[0], sense);
-		if (wacom_wac->serial[0]) {
-			/*
-			 * xf86-input-wacom does not accept a serial number
-			 * of '0'. Report the low 32 bits if possible, but
-			 * if they are zero, report the upper ones instead.
-			 */
-			__u32 serial_lo = wacom_wac->serial[0] & 0xFFFFFFFFu;
-			__u32 serial_hi = wacom_wac->serial[0] >> 32;
-			input_event(input, EV_MSC, MSC_SERIAL, (int)(serial_lo ? serial_lo : serial_hi));
-			input_report_abs(input, ABS_MISC, sense ? id : 0);
-		}
+	if (!tip || !b1) {
+	  wacom_wac->pen_state.stylus_latch = false;
+    }
+  if (!tip || !b2){
+	  wacom_wac->pen_state.stylus2_latch = false;
+	}
+  
+  input_report_key(input, BTN_STYLUS, wacom_wac->pen_state.stylus2_latch);
+  input_report_key(input, BTN_STYLUS2, wacom_wac->pen_state.stylus_latch);
+  input_report_key(input, BTN_STYLUS3, wacom_wac->hid_data.barrelswitch3);
 
-		wacom_wac->hid_data.tipswitch = false;
-		wacom_wac->hid_data.eraser = false;
+  /*
+    * Non-USI EMR tools should have their IDs mangled to
+    * match the legacy behavior of wacom_intuos_general
+    */
+  if (wacom_wac->serial[0] >> 52 == 1)
+    id = wacom_intuos_id_mangle(id);
 
-		input_sync(input);
+  /*
+    * To ensure compatibility with xf86-input-wacom, we should
+    * report the BTN_TOOL_* event prior to the ABS_MISC or
+    * MSC_SERIAL events.
+    */
+  if (!b1 && !b2){
+  input_report_key(input, BTN_TOUCH,
+  		wacom_wac->hid_data.tipswitch);
+    }
+  input_report_key(input, wacom_wac->tool[0], sense);
+  if (wacom_wac->serial[0]) {
+    /*
+      * xf86-input-wacom does not accept a serial number
+      * of '0'. Report the low 32 bits if possible, but
+      * if they are zero, report the upper ones instead.
+      */
+    __u32 serial_lo = wacom_wac->serial[0] & 0xFFFFFFFFu;
+    __u32 serial_hi = wacom_wac->serial[0] >> 32;
+    input_event(input, EV_MSC, MSC_SERIAL, (int)(serial_lo ? serial_lo : serial_hi));
+    input_report_abs(input, ABS_MISC, sense ? id : 0);
+  }
+
+  wacom_wac->hid_data.tipswitch = false;
+  wacom_wac->hid_data.eraser = false;
+  wacom_wac->pen_state.stylus_latch = false;
+  wacom_wac->pen_state.stylus2_latch = false;
+
+  input_sync(input);
 	}
 
 	/* Handle AES battery timeout behavior */
