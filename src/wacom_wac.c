@@ -2618,8 +2618,8 @@ static void wacom_wac_pen_report(struct hid_device *hdev,
 	  wacom_wac->pen_state.stylus2_latch = false;
 	}
   
-  input_report_key(input, BTN_STYLUS, wacom_wac->pen_state.stylus2_latch);
-  input_report_key(input, BTN_STYLUS2, wacom_wac->pen_state.stylus_latch);
+  input_report_key(input, BTN_STYLUS, wacom_wac->hid_data.barrelswitch2);
+  input_report_key(input, BTN_STYLUS2, wacom_wac->hid_data.barrelswitch);
   input_report_key(input, BTN_STYLUS3, wacom_wac->hid_data.barrelswitch3);
 
   /*
@@ -2634,10 +2634,10 @@ static void wacom_wac_pen_report(struct hid_device *hdev,
     * report the BTN_TOOL_* event prior to the ABS_MISC or
     * MSC_SERIAL events.
     */
-  if (!b1 && !b2){
+
   input_report_key(input, BTN_TOUCH,
   		wacom_wac->hid_data.tipswitch);
-    }
+
   input_report_key(input, wacom_wac->tool[0], sense);
   if (wacom_wac->serial[0]) {
     /*
